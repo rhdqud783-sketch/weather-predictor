@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>외기 기반 온·습도 예측</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <h1>외기 기반 온·습도 예측</h1>
+
+  <section class="input-section">
+    <h2>외기 입력</h2>
+    <label>외기 온도 (°C): <input id="outTemp" type="number"/></label>
+    <label>외기 습도 (%RH): <input id="outHum" type="number"/></label>
+    <label>1시간 강수량 (mm): <input id="rain" type="number"/></label>
+    <label>k (최근 샘플 수): <input id="kValue" type="number" value="5"/></label>
+    <button onclick="predict()">예측 실행</button>
+  </section>
+
+  <section class="result-section">
+    <h2>예측 결과</h2>
+    <div id="predictionResult">-</div>
+  </section>
+
+  <section class="data-section">
+    <h2>데이터 수집</h2>
+    <label>날짜: <input id="date" type="date"/></label>
+    <label>시간: <input id="time" type="time"/></label>
+    <label>구역: <input id="zone" type="text"/></label>
+    <label>외기 온도: <input id="sampleOutTemp" type="number"/></label>
+    <label>외기 습도: <input id="sampleOutHum" type="number"/></label>
+    <label>강수량: <input id="sampleRain" type="number"/></label>
+    <label>구역 온도: <input id="zoneTemp" type="number"/></label>
+    <label>구역 습도: <input id="zoneHum" type="number"/></label>
+    <button onclick="addSample()">샘플 추가</button>
+    <button onclick="clearSamples()">전체 삭제</button>
+
+    <table>
+      <thead>
+        <tr>
+          <th>날짜</th><th>시간</th><th>구역</th><th>외기T</th><th>외기RH</th><th>강수</th><th>구역T</th><th>구역RH</th><th>삭제</th>
+        </tr>
+      </thead>
+      <tbody id="sampleTableBody"></tbody>
+    </table>
+  </section>
+
+  <script src="script.js"></script>
+</body>
+</html>
+
+body {
+  font-family: 'Arial', sans-serif;
+  margin: 20px;
+  background-color: #f4f6f8;
+}
+
+h1, h2 {
+  color: #333;
+}
+
+section {
+  background: white;
+  padding: 15px;
+  margin-bottom: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+label {
+  display: block;
+  margin: 5px 0;
+}
+
+input {
+  margin-left: 10px;
+  padding: 5px;
+}
+
+button {
+  margin: 10px 5px 10px 0;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+table {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+}
+
+th, td {
+  border: 1px solid #ccc;
+  text-align: center;
+  padding: 5px;
+}
+
+let samples = JSON.parse(localStorage.getItem('samples') || '[]');
+renderSamples();
+
+function addSample() {
+  const sample = {
+    date: document.getElementById('date').value,
+    time: document.getElementById('time').value,
+    zone: document.getElementById('zone').value,
+    outTemp: parseFloat(document.getElementById('sampleOutTemp').value),
+    outHum: parseFloat(document.getElementById('sampleOutHum').value),
+    rain: parseFloat(document.getElementById('sampleRain').value),
+    zoneTemp: parseFloat(document.getElementById('zoneTemp').value),
+    zoneHum: parseFloat(document.getElementById('zoneHum').value)
+  };
+  samples.push(sample);
+  localStorage.setItem('samples', JSON.stringify(samples));
+  renderSamples();
+}
+
+function renderSamples() {
+  const tbody = document.getElementById('sampleTableBody');
+  tbody.innerHTML = '';
+  samples.forEach((s, index) => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${s.date}</td><td>${s.time}</td><td>${s.zone}</td>
+      <td>${s.outTemp}</td><td>${s.outHum}</td><td>${s.rain}</td>
+      <td>${s.zoneTemp}</td><td>${s.zoneHum}</td>
+      <td><button onclick="deleteSample(${index})">삭제</button></td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+function deleteSample(index) {
+  samples.splice(index, 1);
+  localStorage.setItem('samples', JSON.stringify(samples));
+  renderSamples();
+}
+
+function clearSamples() {
+  if (confirm("모든 샘플을 삭제하시겠습니까?")) {
+    samples = [];
+    localStorage.removeItem('samples');
+    renderSamples();
+  }
+}
+
+function predict() {
+  const outTemp = parseFloat(document.getElementById('outTemp').value);
+  const outHum = parseFloat(document.getElementById('outHum').value);
+  const rain = parseFloat(document.getElementById('rain').value);
+  const k = parseInt(document.getElementById('kValue').value);
+
+  if (samples.length < k) {
+    alert("샘플이 부족합니다.");
+    return;
+  }
+
+  // 단순 거리 기반 예측
+  const distances = samples.map(s => {
+    const d = Math.sqrt(
+      Math.pow(s.outTemp - outTemp, 2) +
+      Math.pow(s.outHum - outHum, 2) +
+      Math.pow(s.rain - rain, 2)
+    );
+    return { ...s, distance: d };
+  });
+
+  const nearest = distances.sort((a, b) => a.distance - b.distance).slice(0, k);
+
+  const predTemp = (nearest.reduce((sum, s) => sum + s.zoneTemp, 0)) / k;
+  const predHum = (nearest.reduce((sum, s) => sum + s.zoneHum, 0)) / k;
+
+  document.getElementById('predictionResult').innerText =
+    `예측 온도: ${predTemp.toFixed(2)}°C, 예측 습도: ${predHum.toFixed(2)}%RH`;
+}
